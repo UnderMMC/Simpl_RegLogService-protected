@@ -17,8 +17,8 @@ import (
 
 type Repository interface {
 	UserRegistration(user entity.User) error
-	UserLogin(session entity.Session, user entity.User) error
-	SessionRegistration(session entity.Session, user entity.User) error
+	UserLogin(session *entity.Session, user entity.User) (entity.Session, error)
+	SessionRegistration(session *entity.Session, user entity.User) (entity.Session, error)
 }
 
 type App struct {
@@ -58,7 +58,7 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var session entity.Session
-	err = a.repo.UserLogin(session, user)
+	session, err = a.repo.UserLogin(&session, user)
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

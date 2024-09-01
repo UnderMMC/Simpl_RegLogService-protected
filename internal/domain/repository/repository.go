@@ -28,7 +28,7 @@ func checkPasswordHash(password, hash string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
-func (r *PostgresUserRepository) SessionRegistration(session entity.Session, user entity.User) error {
+func (r *PostgresUserRepository) SessionRegistration(session *entity.Session, user entity.User) (entity.Session, error) {
 
 	SessionId := uuid.New().String()
 	Expire := time.Now().Add(2 * time.Minute)
@@ -36,10 +36,10 @@ func (r *PostgresUserRepository) SessionRegistration(session entity.Session, use
 	var ID int
 	err := r.db.QueryRow("SELECT user_id FROM logdata WHERE login=$1", user.Login).Scan(&ID)
 	if err != nil {
-		return err
+		return entity.Session{}, err
 	}
 
-	session = entity.Session{
+	session = &entity.Session{
 		UUID:   SessionId,
 		Expire: Expire,
 		ID:     ID,
@@ -47,19 +47,19 @@ func (r *PostgresUserRepository) SessionRegistration(session entity.Session, use
 
 	_, err = r.db.Exec("INSERT INTO sessions (user_id, UUID) VALUES ($1, $2)", session.ID, session.UUID)
 	if err != nil {
-		return err
+		return entity.Session{}, err
 	}
-	return err
+	return *session, err
 }
 
-func (r *PostgresUserRepository) UserLogin(session entity.Session, user entity.User) error {
+func (r *PostgresUserRepository) UserLogin(session *entity.Session, user entity.User) (entity.Session, error) {
+	var result entity.Session
 	var storedPassword string
 	err := r.db.QueryRow("SELECT password FROM logdata WHERE login=$1", user.Login).Scan(&storedPassword)
 	if err != nil || checkPasswordHash(user.Password, storedPassword) != nil {
-		return err
+		return entity.Session{}, err
 	} else {
-		r.SessionRegistration(session, user)
-
+		result, err = r.SessionRegistration(session, user)
 	}
-	return err
+	return result, err
 }
