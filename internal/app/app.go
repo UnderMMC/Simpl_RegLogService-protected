@@ -15,14 +15,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type Repository interface {
-	UserRegistration(user entity.User) error
-	UserLogin(session *entity.Session, user entity.User) (entity.Session, error)
-	SessionRegistration(session *entity.Session, user entity.User) (entity.Session, error)
+type Service interface {
+	HashPassword(user entity.User) (string, error)
+	HashedPasswordCheck(user entity.User) (string, error)
 }
 
 type App struct {
-	repo Repository
+	serv Service
 }
 
 var db *sql.DB
