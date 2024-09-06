@@ -16,8 +16,8 @@ import (
 )
 
 type Service interface {
-	HashPassword(user entity.User) (string, error)
-	HashedPasswordCheck(user entity.User) (string, error)
+	Create(user entity.User) error
+	Login(user entity.User, session *entity.Session) (string, error)
 }
 
 type App struct {
@@ -25,11 +25,6 @@ type App struct {
 }
 
 var db *sql.DB
-
-func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
-}
 
 func (a *App) registrHandler(w http.ResponseWriter, r *http.Request) {
 	var regUser entity.User
@@ -39,8 +34,9 @@ func (a *App) registrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	regUser.Password, err = hashPassword(regUser.Password)
-	err = a.repo.UserRegistration(regUser)
+	err = a.serv.Create(regUser)
+	//regUser.Password, err = a.serv.Create(regUser.Password)
+	err = a.serv.
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
