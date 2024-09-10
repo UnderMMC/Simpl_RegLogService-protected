@@ -17,12 +17,11 @@ import (
 type Service interface {
 	Registration(user entity.User) error
 	Authorization(user entity.User, session entity.Session) error
-	CheckSession(session entity.Session) error
+	CheckSession(session entity.Session) (int, error)
 }
 
 type App struct {
 	serv Service
-	repo Repository
 }
 
 var db *sql.DB
@@ -73,7 +72,8 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 
 		// Проверка существования сессии в базе данных
 		var session entity.Session
-		err := a.serv.CheckSession(session)
+		var err error
+		session.ID, err = a.serv.CheckSession(session)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -114,9 +114,9 @@ func (a *App) Run() {
 	}
 
 	// help pls
-	userServ := service.Service
-	userRepo := repository.NewPostgresUserRepository(db)
-	a.repo = userRepo
+	repo := repository.NewPostgresUserRepository(db)
+	serv := service.NewUserService(repo)
+	a.serv = serv
 
 	r := mux.NewRouter()
 
