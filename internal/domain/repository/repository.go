@@ -23,38 +23,36 @@ func (r *PostgresUserRepository) UserRegistration(user entity.User) error {
 	return err
 }
 
-func (r *PostgresUserRepository) UserLogin(session *entity.Session, user entity.User) (entity.Session, error) {
-	var result entity.Session
+func (r *PostgresUserRepository) GetUserHashedPass(user entity.User) (string, error) {
 	var storedPassword string
 	err := r.db.QueryRow("SELECT password FROM logdata WHERE login=$1", user.Login).Scan(&storedPassword)
-	if err != nil || checkPasswordHash(user.Password, storedPassword) != nil {
-		return entity.Session{}, err
-	} else {
-		result, err = r.SessionRegistration(session, user)
-	}
-	return result, err
+
+	return storedPassword, err
 }
 
-func (r *PostgresUserRepository) SessionRegistration(session *entity.Session, user entity.User) (entity.Session, error) {
-	SessionId := uuid.New().String()
+func (r *PostgresUserRepository) SessionRegistration(session entity.Session, user entity.User) (string, time.Time, error) {
+	UUID := uuid.New().String()
 	Expire := time.Now().Add(2 * time.Minute)
 
-	session = &entity.Session{
-		UUID:   SessionId,
-		Expire: Expire,
-		ID:     ID,
-	}
-
-	_, err = r.db.Exec("INSERT INTO sessions (user_id, UUID) VALUES ($1, $2)", session.ID, session.UUID)
+	_, err := r.db.Exec("INSERT INTO sessions (user_id, UUID) VALUES ($1, $2)", user.ID, session.UUID)
 	if err != nil {
-		return entity.Session{}, err
+		return UUID, Expire, err
 	}
-	return *session, err
+	return UUID, Expire, err
 }
 
 func (r *PostgresUserRepository) GetUserID(user entity.User) (int, error) {
 	var ID int
 	err := r.db.QueryRow("SELECT user_id FROM logdata WHERE login=$1", user.Login).Scan(&ID)
+	if err != nil {
+		return 0, err
+	}
+	return ID, nil
+}
+
+func (r *PostgresUserRepository) GetSessionID(session entity.Session) (int, error) {
+	var ID int
+	err := r.db.QueryRow("SELECT session_id FROM sessions WHERE user_id=$1", session.UUID).Scan(&ID)
 	if err != nil {
 		return 0, err
 	}

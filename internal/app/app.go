@@ -6,22 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"golang.org/x/crypto/bcrypt"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"secondTry/internal/domain/entity"
 	"secondTry/internal/domain/repository"
-
-	_ "github.com/lib/pq"
+	"secondTry/internal/domain/service"
 )
 
 type Service interface {
-	Create(user entity.User) error
-	Login(user entity.User, session *entity.Session) (string, error)
+	Registration(user entity.User) error
+	Authorization(user entity.User, session entity.Session) error
+	CheckSession(session entity.Session) error
 }
 
 type App struct {
 	serv Service
+	repo Repository
 }
 
 var db *sql.DB
@@ -34,9 +35,7 @@ func (a *App) registrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.serv.Create(regUser)
-	//regUser.Password, err = a.serv.Create(regUser.Password)
-	err = a.serv.
+	err = a.serv.Registration(regUser)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
@@ -53,8 +52,7 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var session entity.Session
-	session, err = a.repo.UserLogin(&session, user)
-
+	err = a.serv.Authorization(user, session)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
@@ -75,15 +73,14 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 
 		// Проверка существования сессии в базе данных
 		var session entity.Session
-		var userID int
-		err := db.QueryRow("SELECT uuid FROM sessions WHERE user_id=$1", session.ID).Scan(&userID)
+		err := a.serv.CheckSession(session)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		// Добавляем userID в контекст
-		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx := context.WithValue(r.Context(), "userID", session.ID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -116,6 +113,8 @@ func (a *App) Run() {
 		log.Fatal(err)
 	}
 
+	// help pls
+	userServ := service.Service
 	userRepo := repository.NewPostgresUserRepository(db)
 	a.repo = userRepo
 
