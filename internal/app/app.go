@@ -72,23 +72,16 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Проверка существования сессии в базе данных
+		// Проверка существования сессии через сервис
 		var session entity.Session
+		session.UUID = UUID
 		var err error
-		session.ID, session.UUID, err = a.serv.CheckSession(session)
+		session.ID, session.UUID, err = a.serv.CheckSession(session) // Предполагаю, что UUID должен быть передан сюда
 		if err != nil {
+			log.Printf("CheckSession error: %v", err) // Логирование ошибки
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-		}
-
-		// Возвращаем сессию в формате JSON
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode()
 
 		// Добавляем userID в контекст
 		ctx := context.WithValue(r.Context(), "userID", session.ID)
@@ -97,10 +90,17 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 }
 
 func protectedHandler(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("userID").(string)
+	// Приведение userID к int, если это число
+	userID, ok := r.Context().Value("userID").(int)
+	if !ok {
+		log.Println("Failed to cast userID to int")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	// Создаем ответ в формате JSON
 	response := map[string]string{
-		"message": fmt.Sprintf("Welcome, %s!", userID),
+		"message": fmt.Sprintf("Welcome, user #%d!", userID),
 	}
 
 	// Устанавливаем заголовок Content-Type
@@ -108,7 +108,11 @@ func protectedHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK) // Устанавливаем статус 200 OK
 
 	// Кодируем ответ в JSON и отправляем его клиенту
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Printf("Failed to encode response: %v", err) // Логирование ошибки кодирования
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 //nolint:exhaustruct
