@@ -13,6 +13,7 @@ type Repository interface {
 	SessionRegistration(session entity.Session, user entity.User) (string, time.Time, error)
 	GetUserID(user entity.User) (int, error)
 	GetSessionID(session entity.Session) (int, error)
+	GetSessionUUID(session entity.Session) (string, error)
 }
 
 type Service struct {
@@ -25,39 +26,45 @@ func NewUserService(repo *repository.PostgresUserRepository) *Service {
 
 func (s *Service) Registration(user entity.User) error {
 	hashedPassword, err := hashPassword(user.Password)
+	user.Password = hashedPassword
 	err = s.repo.UserRegistration(user)
 	if err != nil {
 		return err
 	}
-	user.Password = hashedPassword
 	return err
 }
 
-func (s *Service) Authorization(user entity.User, session entity.Session) error {
+func (s *Service) Authorization(user entity.User, session entity.Session) (string, time.Time, int, error) {
 	userID, err := s.repo.GetUserID(user)
 	user.ID = userID
 
 	var hashedPassword string
 	hashedPassword, err = s.repo.GetUserHashedPass(user)
 	if err != nil {
-		return err
+		return session.UUID, session.Expire, session.ID, err
 	}
 	if checkPasswordHash(user.Password, hashedPassword) != nil {
-		return err
+		return session.UUID, session.Expire, session.ID, err
 	} else {
 		session.UUID, session.Expire, err = s.repo.SessionRegistration(session, user)
 	}
-	return err
+	return session.UUID, session.Expire, session.ID, err
 }
 
-func (s *Service) CheckSession(session entity.Session) (int, error) {
+func (s *Service) CheckSession(session entity.Session) (int, string, error) {
 	sessionID, err := s.repo.GetSessionID(session)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	} else {
 		session.ID = sessionID
 	}
-	return session.ID, nil
+	sessionUUID, err := s.repo.GetSessionUUID(session)
+	if err != nil {
+		return 0, "", err
+	} else {
+		session.UUID = sessionUUID
+	}
+	return session.ID, session.UUID, nil
 }
 
 func hashPassword(password string) (string, error) {

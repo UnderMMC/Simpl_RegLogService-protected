@@ -12,12 +12,13 @@ import (
 	"secondTry/internal/domain/entity"
 	"secondTry/internal/domain/repository"
 	"secondTry/internal/domain/service"
+	"time"
 )
 
 type Service interface {
 	Registration(user entity.User) error
-	Authorization(user entity.User, session entity.Session) error
-	CheckSession(session entity.Session) (int, error)
+	Authorization(user entity.User, session entity.Session) (string, time.Time, int, error)
+	CheckSession(session entity.Session) (int, string, error)
 }
 
 type App struct {
@@ -51,11 +52,12 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var session entity.Session
-	err = a.serv.Authorization(user, session)
+	session.UUID, session.Expire, session.ID, err = a.serv.Authorization(user, session)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 	}
+
 	// Возвращаем сессию в формате JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(session)
@@ -73,11 +75,20 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 		// Проверка существования сессии в базе данных
 		var session entity.Session
 		var err error
-		session.ID, err = a.serv.CheckSession(session)
+		session.ID, session.UUID, err = a.serv.CheckSession(session)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+		}
+
+		// Возвращаем сессию в формате JSON
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode()
 
 		// Добавляем userID в контекст
 		ctx := context.WithValue(r.Context(), "userID", session.ID)
@@ -124,7 +135,8 @@ func (a *App) Run() {
 	r.HandleFunc("/login", a.loginHandler).Methods("POST")
 
 	// Применяем middleware к защищенному маршруту
-	r.Handle("/protected", a.sessionMiddleware(http.HandlerFunc(protectedHandler))).Methods("GET")
+	r.Handle("/protect", a.sessionMiddleware(http.HandlerFunc(protectedHandler))).Methods("GET")
 
+	log.Println("Starting server on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }

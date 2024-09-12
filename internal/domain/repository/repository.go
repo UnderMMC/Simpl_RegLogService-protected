@@ -34,7 +34,7 @@ func (r *PostgresUserRepository) SessionRegistration(session entity.Session, use
 	UUID := uuid.New().String()
 	Expire := time.Now().Add(2 * time.Minute)
 
-	_, err := r.db.Exec("INSERT INTO sessions (user_id, UUID) VALUES ($1, $2)", user.ID, session.UUID)
+	_, err := r.db.Exec("INSERT INTO sessions (user_id, UUID) VALUES ($1, $2)", user.ID, UUID)
 	if err != nil {
 		return UUID, Expire, err
 	}
@@ -52,9 +52,18 @@ func (r *PostgresUserRepository) GetUserID(user entity.User) (int, error) {
 
 func (r *PostgresUserRepository) GetSessionID(session entity.Session) (int, error) {
 	var ID int
-	err := r.db.QueryRow("SELECT session_id FROM sessions WHERE user_id=$1", session.UUID).Scan(&ID)
+	err := r.db.QueryRow("SELECT user_id FROM sessions WHERE uuid=$1", session.UUID).Scan(&ID)
 	if err != nil {
 		return 0, err
 	}
 	return ID, nil
+}
+
+func (r *PostgresUserRepository) GetSessionUUID(session entity.Session) (string, error) {
+	var UUID string
+	err := r.db.QueryRow("SELECT UUID FROM sessions WHERE user_id=$1", session.ID).Scan(&UUID)
+	if err != nil {
+		return "", err
+	}
+	return UUID, nil
 }
