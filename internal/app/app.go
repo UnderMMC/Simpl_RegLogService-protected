@@ -72,7 +72,6 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Проверка существования сессии через сервис
 		var session entity.Session
 		session.UUID = UUID
 		var err error
