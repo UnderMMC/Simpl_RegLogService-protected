@@ -6,31 +6,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"golang.org/x/crypto/bcrypt"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"secondTry/internal/domain/entity"
 	"secondTry/internal/domain/repository"
-
-	_ "github.com/lib/pq"
+	"secondTry/internal/domain/service"
+	"time"
 )
 
-type Repository interface {
-	UserRegistration(user entity.User) error
-	UserLogin(session *entity.Session, user entity.User) (entity.Session, error)
-	SessionRegistration(session *entity.Session, user entity.User) (entity.Session, error)
+type Service interface {
+	Registration(user entity.User) error
+	Authorization(user entity.User, session entity.Session) (string, time.Time, int, error)
+	CheckSession(session entity.Session) (int, string, error)
 }
 
 type App struct {
-	repo Repository
+	serv Service
 }
 
 var db *sql.DB
-
-func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
-}
 
 func (a *App) registrHandler(w http.ResponseWriter, r *http.Request) {
 	var regUser entity.User
@@ -40,8 +35,7 @@ func (a *App) registrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	regUser.Password, err = hashPassword(regUser.Password)
-	err = a.repo.UserRegistration(regUser)
+	err = a.serv.Registration(regUser)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
@@ -58,12 +52,12 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var session entity.Session
-	session, err = a.repo.UserLogin(&session, user)
-
+	session.UUID, session.Expire, session.ID, err = a.serv.Authorization(user, session)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 	}
+
 	// Возвращаем сессию в формате JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(session)
@@ -78,26 +72,34 @@ func (a *App) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Проверка существования сессии в базе данных
 		var session entity.Session
-		var userID int
-		err := db.QueryRow("SELECT uuid FROM sessions WHERE user_id=$1", session.ID).Scan(&userID)
+		session.UUID = UUID
+		var err error
+		session.ID, session.UUID, err = a.serv.CheckSession(session) // Предполагаю, что UUID должен быть передан сюда
 		if err != nil {
+			log.Printf("CheckSession error: %v", err) // Логирование ошибки
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		// Добавляем userID в контекст
-		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx := context.WithValue(r.Context(), "userID", session.ID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func protectedHandler(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("userID").(string)
+	// Приведение userID к int, если это число
+	userID, ok := r.Context().Value("userID").(int)
+	if !ok {
+		log.Println("Failed to cast userID to int")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	// Создаем ответ в формате JSON
 	response := map[string]string{
-		"message": fmt.Sprintf("Welcome, %s!", userID),
+		"message": fmt.Sprintf("Welcome, user #%d!", userID),
 	}
 
 	// Устанавливаем заголовок Content-Type
@@ -105,7 +107,11 @@ func protectedHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK) // Устанавливаем статус 200 OK
 
 	// Кодируем ответ в JSON и отправляем его клиенту
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Printf("Failed to encode response: %v", err) // Логирование ошибки кодирования
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 //nolint:exhaustruct
@@ -121,8 +127,10 @@ func (a *App) Run() {
 		log.Fatal(err)
 	}
 
-	userRepo := repository.NewPostgresUserRepository(db)
-	a.repo = userRepo
+	// help pls
+	repo := repository.NewPostgresUserRepository(db)
+	serv := service.NewUserService(repo)
+	a.serv = serv
 
 	r := mux.NewRouter()
 
@@ -130,7 +138,8 @@ func (a *App) Run() {
 	r.HandleFunc("/login", a.loginHandler).Methods("POST")
 
 	// Применяем middleware к защищенному маршруту
-	r.Handle("/protected", a.sessionMiddleware(http.HandlerFunc(protectedHandler))).Methods("GET")
+	r.Handle("/protect", a.sessionMiddleware(http.HandlerFunc(protectedHandler))).Methods("GET")
 
+	log.Println("Starting server on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
