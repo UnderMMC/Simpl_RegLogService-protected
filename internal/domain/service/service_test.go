@@ -11,6 +11,15 @@ import (
 	"secondTry/internal/domain/entity"
 )
 
+type Repository interface {
+	UserRegistration(user entity.User) error
+	GetUserHashedPass(user entity.User) (string, error)
+	SessionRegistration(session entity.Session, user entity.User) (string, time.Time, error)
+	GetUserID(user entity.User) (int, error)
+	GetSessionID(session entity.Session) (int, error)
+	GetSessionUUID(session entity.Session) (string, error)
+}
+
 // MockRepository - это структура, которая реализует интерфейс Repository
 type MockRepository struct {
 	mock.Mock
@@ -50,10 +59,7 @@ func TestRegistration(t *testing.T) {
 	mockRepo := new(MockRepository)
 	userService := service.NewUserService(mockRepo)
 
-	user := entity.User{Login: "testuser", Password: "password123"}
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-	user.Password = string(hashedPassword)
+	user := entity.User{Login: "testuser", Password: "password123", ID: 0}
 
 	mockRepo.On("UserRegistration", user).Return(nil)
 
@@ -67,7 +73,7 @@ func TestAuthorization_Success(t *testing.T) {
 	mockRepo := new(MockRepository)
 	userService := service.NewUserService(mockRepo)
 
-	user := entity.User{Login: "testuser", Password: "password123"}
+	user := entity.User{Login: "testuser", Password: "password123", ID: 1}
 	session := entity.Session{UUID: "uuid123", Expire: time.Now().Add(24 * time.Hour)}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
@@ -89,7 +95,7 @@ func TestAuthorization_FailedPasswordCheck(t *testing.T) {
 	mockRepo := new(MockRepository)
 	userService := service.NewUserService(mockRepo)
 
-	user := entity.User{Login: "testuser", Password: "wrongpassword"}
+	user := entity.User{Login: "testuser", Password: "wrongpassword", ID: 1}
 	session := entity.Session{UUID: "uuid123", Expire: time.Now().Add(24 * time.Hour)}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("correctpassword"), bcrypt.DefaultCost)
@@ -110,7 +116,7 @@ func TestCheckSession(t *testing.T) {
 	mockRepo := new(MockRepository)
 	userService := service.NewUserService(mockRepo)
 
-	session := entity.Session{UUID: "uuid123"}
+	session := entity.Session{UUID: "uuid123", ID: 1}
 
 	mockRepo.On("GetSessionID", session).Return(1, nil)
 	mockRepo.On("GetSessionUUID", session).Return("uuid123", nil)

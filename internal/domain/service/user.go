@@ -3,7 +3,6 @@ package service
 import (
 	"golang.org/x/crypto/bcrypt"
 	"secondTry/internal/domain/entity"
-	"secondTry/internal/domain/repository"
 	"time"
 )
 
@@ -17,10 +16,10 @@ type Repository interface {
 }
 
 type Service struct {
-	repo *repository.PostgresUserRepository
+	repo Repository
 }
 
-func NewUserService(repo *repository.PostgresUserRepository) *Service {
+func NewUserService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
